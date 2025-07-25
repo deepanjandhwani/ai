@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NGO Budget Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+        /* Custom styles for active and inactive tabs */
+        .tab-active {
+            border-bottom-color: #0ea5e9; /* sky-500 */
+            color: #0369a1; /* sky-700 */
+            font-weight: 600;
+        }
+        .tab-inactive {
+            border-bottom-color: transparent;
+            color: #475569; /* slate-600 */
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // --- Icon Components (replaces lucide-react) ---
+        const Icon = ({ className, children }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>
+        );
+        const ArrowLeft = ({className}) => <Icon className={className}><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></Icon>;
+        const ArrowRight = ({className}) => <Icon className={className}><path d="m5 12 7-7 7 7"/><path d="M5 12h14"/></Icon>;
+        const ChevronDown = ({className}) => <Icon className={className}><path d="m6 9 6 6 6-6"/></Icon>;
+        const ChevronUp = ({className}) => <Icon className={className}><path d="m18 15-6-6-6 6"/></Icon>;
+        const Download = ({className}) => <Icon className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></Icon>;
+        const HelpCircle = ({className}) => <Icon className={className}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></Icon>;
+        const FileText = ({className}) => <Icon className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></Icon>;
+
+        // --- Data Structure ---
+        const budgetTemplate = {
+            welcome: { ngoName: '', fiscalYearStart: '', fiscalYearEnd: '', budgetTitle: '' },
+            programmeExpenses: [
+                { id: 1, group: 'Programme A', particular: 'Activity 1', unit: 'Month', nos: 12, costPerUnit: 0, total: 0 },
+            ],
+            coreProgrammeTeam: [
+                { id: 1, group: 'Programme A', particular: 'Program Manager', unit: "Person/Month", nos: 12, costPerUnit: 0, total: 0 },
+            ],
+            seniorManagementTeam: [
+                { id: 1, group: 'Leadership', particular: 'Executive Director', unit: "Person/Month", nos: 12, costPerUnit: 0, total: 0 },
+            ],
+            fundRaisingMarketingCost: [
+                { id: 1, group: 'Fundraising & Marketing Costs', particular: 'Fundraising Manager', unit: "Person/Month", nos: 12, costPerUnit: 0, total: 0 },
+                { id: 2, group: 'Fundraising & Marketing Costs', particular: 'Social Media Ads', unit: "Campaign", nos: 4, costPerUnit: 0, total: 0 },
+            ],
+            administrativeCosts: [
+                 { id: 1, group: 'HR', particular: 'Admin Assistant', unit: "Person/Month", nos: 12, costPerUnit: 0, total: 0 },
+                 { id: 2, group: 'Operational Costs', particular: 'Office Rent', unit: "Month", nos: 12, costPerUnit: 0, total: 0 },
+                 { id: 3, group: 'Capital Costs', particular: 'New Laptops', unit: "Item", nos: 2, costPerUnit: 0, total: 0 },
+            ],
+            otherOrganisationCosts: [
+                { id: 1, group: 'Statutory', particular: 'Annual Audit', unit: "Lump Sum", nos: 1, costPerUnit: 0, total: 0 },
+                { id: 2, group: 'Technology', particular: 'Website Hosting', unit: "Year", nos: 1, costPerUnit: 0, total: 0 },
+                { id: 3, group: 'Capacity Building', particular: 'Staff Training', unit: "Workshop", nos: 2, costPerUnit: 0, total: 0 },
+                { id: 4, group: 'Other Costs', particular: 'Contingency', unit: "Lump Sum", nos: 1, costPerUnit: 0, total: 0 },
+            ],
+        };
+
+        // --- Helper Components ---
+        const Section = ({ title, children }) => (
+            <div className="bg-white p-6 md:p-8 rounded-2xl shadow-lg mb-8 border border-slate-200">
+                <h2 className="text-2xl font-bold text-slate-800 mb-6 border-b pb-4">{title}</h2>
+                {children}
+            </div>
+        );
+
+        const Group = ({ title, tip, children, isEditable, onTitleChange }) => {
+            const [isOpen, setIsOpen] = React.useState(true);
+            return (
+                <div className="mb-6 border border-slate-200 rounded-lg p-4">
+                    <div className="flex justify-between items-center">
+                         {isEditable ? (
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={e => onTitleChange(e.target.value)}
+                                className="text-lg font-semibold text-slate-700 p-1 rounded-md border-2 border-transparent focus:border-sky-300 w-full mr-4 bg-slate-50"
+                            />
+                        ) : (
+                             <h3 className="text-lg font-semibold text-slate-700 cursor-pointer" onClick={() => setIsOpen(!isOpen)}>{title}</h3>
+                        )}
+                        <div className="flex items-center cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
+                            {isOpen ? <ChevronUp className="text-slate-500" /> : <ChevronDown className="text-slate-500" />}
+                        </div>
+                    </div>
+                    {isOpen && (
+                        <div className="mt-4">
+                            <p className="flex items-center text-sm text-slate-500 bg-slate-50 p-3 rounded-md mb-4">
+                                <HelpCircle className="w-5 h-5 mr-2 text-sky-500 flex-shrink-0" /><span>{tip}</span>
+                            </p>
+                            {children}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const Input = ({ label, name, type = 'text', value, onChange, placeholder, className = '' }) => (
+            <div className={`flex flex-col ${className}`}>
+                <label className="mb-1 text-sm font-medium text-slate-600">{label}</label>
+                <input id={name} name={name} type={type} value={value} onChange={onChange} placeholder={placeholder} className="p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition"/>
+            </div>
+        );
+
+        const AddRowButton = ({ onClick }) => (
+            <button onClick={onClick} className="mt-4 bg-sky-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-600 transition-all duration-300 ease-in-out shadow-md hover:shadow-lg flex items-center justify-center text-sm">Add New Line Item</button>
+        );
+
+        const RemoveRowButton = ({ onClick }) => (
+            <button onClick={onClick} className="text-red-500 hover:text-red-700 transition-colors" title="Remove row">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+            </button>
+        );
+
+        // --- Workflow Step Components ---
+        const Welcome = ({ data, updateData }) => {
+            const handleChange = (e) => updateData({ ...data, [e.target.name]: e.target.value });
+            return (
+                <Section title="Welcome! Let's Start Your Budget">
+                    <p className="mb-6 text-slate-600">First, let's get some basic details for your budget report. This will appear on the cover page of your downloaded Excel file.</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Input label="NGO Name" name="ngoName" value={data.ngoName} onChange={handleChange} placeholder="e.g., Bright Futures Foundation" />
+                        <Input label="Budget Title" name="budgetTitle" value={data.budgetTitle} onChange={handleChange} placeholder="e.g., Annual Budget 2025-26" />
+                        <Input label="Fiscal Year Start Date" name="fiscalYearStart" type="date" value={data.fiscalYearStart} onChange={handleChange} />
+                        <Input label="Fiscal Year End Date" name="fiscalYearEnd" type="date" value={data.fiscalYearEnd} onChange={handleChange} />
+                    </div>
+                </Section>
+            );
+        };
+
+        const DynamicExpenseStep = ({ title, tip, data, updateData, columns, groupTips, isGroupNameEditable, onGroupNameChange }) => {
+            const handleUpdate = (id, field, value) => {
+                let updatedItem = { ...data.find(item => item.id === id) };
+                updatedItem[field] = value;
+                if (['nos', 'costPerUnit'].includes(field)) {
+                    updatedItem.total = (updatedItem.nos || 0) * (updatedItem.costPerUnit || 0);
+                }
+                updateData(data.map(item => (item.id === id ? updatedItem : item)));
+            };
+
+            const handleAddRow = (groupName) => {
+                const newId = data.length > 0 ? Math.max(...data.map(i => i.id)) + 1 : 1;
+                const newRow = { id: newId, group: groupName, particular: '', total: 0 };
+                columns.forEach(col => {
+                    if (!['particular', 'group', 'total'].includes(col.id)) {
+                        newRow[col.id] = col.type === 'number' ? 1 : '';
+                        if (col.id.includes('cost')) newRow[col.id] = 0;
+                    }
+                });
+                updateData([...data, newRow]);
+            };
+
+            const handleRemoveRow = id => updateData(data.filter(item => item.id !== id));
+            
+            const groups = [...new Set(data.map(item => item.group))];
+
+            return (
+                <Section title={title}>
+                    <p className="mb-6 text-slate-600">{tip}</p>
+                    {groups.map(group => (
+                        <Group 
+                            key={group} 
+                            title={group} 
+                            tip={groupTips[group] || "Enter details for this section."}
+                            isEditable={isGroupNameEditable}
+                            onTitleChange={(newName) => onGroupNameChange(group, newName)}
+                        >
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-slate-700 uppercase bg-slate-100">
+                                        <tr>
+                                            {columns.map(col => <th key={col.id} scope="col" className="px-4 py-3">{col.label}</th>)}
+                                            <th scope="col" className="px-4 py-3 text-right">Total</th>
+                                            <th scope="col" className="px-4 py-3"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.filter(item => item.group === group).map(item => (
+                                            <tr key={item.id} className="border-b hover:bg-slate-50">
+                                                {columns.map(col => (
+                                                    <td key={col.id} className="px-4 py-2">
+                                                        <input type={col.type || 'text'} value={item[col.id] || ''} onChange={e => handleUpdate(item.id, col.id, col.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)} className="w-full p-1 border border-transparent hover:border-slate-300 bg-transparent rounded-md" placeholder={col.label}/>
+                                                    </td>
+                                                ))}
+                                                <td className="px-4 py-2 text-right font-medium text-slate-800">₹{item.total.toLocaleString('en-IN')}</td>
+                                                <td className="px-4 py-2"><RemoveRowButton onClick={() => handleRemoveRow(item.id)} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                             <AddRowButton onClick={() => handleAddRow(group)} />
+                        </Group>
+                    ))}
+                </Section>
+            );
+        };
+        
+        const CoreTeamStep = ({ title, tip, data, updateData, columns, groupTip, programmeNames }) => {
+            const handleUpdate = (id, field, value) => {
+                let updatedItem = { ...data.find(item => item.id === id) };
+                updatedItem[field] = value;
+                if (['nos', 'costPerUnit'].includes(field)) {
+                    updatedItem.total = (updatedItem.nos || 0) * (updatedItem.costPerUnit || 0);
+                }
+                updateData(data.map(item => (item.id === id ? updatedItem : item)));
+            };
+
+            const handleAddRow = (groupName) => {
+                const newId = data.length > 0 ? Math.max(...data.map(i => i.id)) + 1 : 1;
+                const newRow = { id: newId, group: groupName, particular: '', total: 0 };
+                columns.forEach(col => {
+                    if (!['particular', 'group', 'total'].includes(col.id)) {
+                        newRow[col.id] = col.type === 'number' ? 1 : '';
+                        if (col.id.includes('cost')) newRow[col.id] = 0;
+                    }
+                });
+                updateData([...data, newRow]);
+            };
+
+            const handleRemoveRow = id => updateData(data.filter(item => item.id !== id));
+
+            return (
+                <Section title={title}>
+                    <p className="mb-6 text-slate-600">{tip}</p>
+                    {programmeNames.length === 0 && <p className="text-slate-500 bg-yellow-50 p-3 rounded-md">Please add and name a programme in the 'Programme Expenses' tab first to assign team members.</p>}
+                    {programmeNames.map(progName => (
+                        <Group key={progName} title={`Team for ${progName}`} tip={groupTip}>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-slate-700 uppercase bg-slate-100">
+                                        <tr>
+                                            {columns.map(col => <th key={col.id} scope="col" className="px-4 py-3">{col.label}</th>)}
+                                            <th scope="col" className="px-4 py-3 text-right">Total</th>
+                                            <th scope="col" className="px-4 py-3"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.filter(item => item.group === progName).map(item => (
+                                            <tr key={item.id} className="border-b hover:bg-slate-50">
+                                                {columns.map(col => (
+                                                    <td key={col.id} className="px-4 py-2">
+                                                        <input type={col.type || 'text'} value={item[col.id] || ''} onChange={e => handleUpdate(item.id, col.id, col.type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value)} className="w-full p-1 border border-transparent hover:border-slate-300 bg-transparent rounded-md" placeholder={col.label} />
+                                                    </td>
+                                                ))}
+                                                <td className="px-4 py-2 text-right font-medium text-slate-800">₹{item.total.toLocaleString('en-IN')}</td>
+                                                <td className="px-4 py-2"><RemoveRowButton onClick={() => handleRemoveRow(item.id)} /></td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <AddRowButton onClick={() => handleAddRow(progName)} />
+                        </Group>
+                    ))}
+                </Section>
+            );
+        };
+        
+        const expenseCols = [
+            { id: 'particular', label: 'Particulars' }, { id: 'unit', label: 'Unit' },
+            { id: 'nos', label: 'No. of Units', type: 'number' },
+            { id: 'costPerUnit', label: 'Cost/Unit (₹)', type: 'number' },
+        ];
+        
+        function App() {
+            const [step, setStep] = React.useState(0);
+            const [data, setData] = React.useState(budgetTemplate);
+            const [showSummary, setShowSummary] = React.useState(false);
+            const [expandedSummary, setExpandedSummary] = React.useState({});
+
+            const steps = [
+                { name: 'Welcome', Component: Welcome, dataKey: 'welcome' },
+                { name: 'Programme Expenses', Component: DynamicExpenseStep, dataKey: 'programmeExpenses', cols: expenseCols, tip: "Detail all expenses directly tied to delivering your services and activities.", groupTips:{}},
+                { name: 'Core Programme Team', Component: CoreTeamStep, dataKey: 'coreProgrammeTeam', cols: expenseCols, tip: "List salaries and costs for staff directly involved in program implementation.", groupTip: "e.g., Field Staff, Community Mobilizers. Define costs per person per month or annually."},
+                { name: 'Senior Management Team', Component: DynamicExpenseStep, dataKey: 'seniorManagementTeam', cols: expenseCols, tip: "List salaries and costs for senior leadership and management roles.", groupTips:{"Leadership": "e.g., Leadership, Support Functions. Include roles like Executive Director, Finance Manager, etc."}},
+                { name: 'Fund Raising & Marketing', Component: DynamicExpenseStep, dataKey: 'fundRaisingMarketingCost', cols: expenseCols, tip: "Detail all costs associated with raising funds and promoting your organization.", groupTips:{"Fundraising & Marketing Costs": "This covers all fundraising and marketing related costs including HR, events, campaigns etc."}},
+                { name: 'Administrative Costs', Component: DynamicExpenseStep, dataKey: 'administrativeCosts', cols: expenseCols, tip: "Add all general operating expenses that keep your organization running.", groupTips:{
+                    "HR": "Includes cost of any person involved in administrative activities.",
+                    "Operational Costs": "Includes rent, utilities, office supplies, etc.",
+                    "Capital Costs": "Includes any capital cost including laptops, renovation, etc."
+                }},
+                { name: 'Other Organisation Costs', Component: DynamicExpenseStep, dataKey: 'otherOrganisationCosts', cols: expenseCols, tip: "Include any other costs that don't fit into the previous categories.", groupTips:{
+                     "Statutory": "Compliance, audit related.",
+                     "Technology": "Tech costs such as software licenses, website hosting etc.",
+                     "Capacity Building": "Learning and training included.",
+                     "Other Costs": "Contingency or reserves."
+                }},
+            ];
+
+            const programmeNames = [...new Set(data.programmeExpenses.map(item => item.group))];
+            
+            const addProgramme = () => {
+                if (programmeNames.length >= 5) return;
+                const newProgrammeName = `Programme ${String.fromCharCode(65 + programmeNames.length)}`;
+                const newId = data.programmeExpenses.length > 0 ? Math.max(...data.programmeExpenses.map(i => i.id)) + 1 : 1;
+                const newProgrammeItem = { id: newId, group: newProgrammeName, particular: 'New Activity', unit: 'Lump Sum', nos: 1, costPerUnit: 0, total: 0 };
+                updateData('programmeExpenses', [...data.programmeExpenses, newProgrammeItem]);
+            };
+            
+            const handleProgrammeNameChange = (oldName, newName) => {
+                if (oldName === newName || !newName.trim()) return; // No change or empty name
+                setData(prevData => {
+                    const updatedProgrammeExpenses = prevData.programmeExpenses.map(item =>
+                        item.group === oldName ? { ...item, group: newName } : item
+                    );
+                    const updatedCoreProgrammeTeam = prevData.coreProgrammeTeam.map(item =>
+                        item.group === oldName ? { ...item, group: newName } : item
+                    );
+                    return {
+                        ...prevData,
+                        programmeExpenses: updatedProgrammeExpenses,
+                        coreProgrammeTeam: updatedCoreProgrammeTeam,
+                    };
+                });
+            };
+
+            const updateData = (key, newData) => setData(prev => ({ ...prev, [key]: newData }));
+            const nextStep = () => !showSummary && (step < steps.length - 1 ? setStep(s => s + 1) : setShowSummary(true));
+            const prevStep = () => showSummary ? setShowSummary(false) : (step > 0 && setStep(s => s - 1));
+            const goToStep = (index) => { setShowSummary(false); setStep(index); };
+            
+            const ActiveComponent = steps[step].Component;
+            const activeStepInfo = steps[step];
+
+            const handleDownload = () => {
+                const wb = XLSX.utils.book_new();
+                const { expenseTotal, categoryTotals } = calculateTotals;
+                 const summaryData = [
+                    ["Budget Summary for", data.welcome.ngoName],
+                    ["Fiscal Year", `${data.welcome.fiscalYearStart} to ${data.welcome.fiscalYearEnd}`], [],
+                    ["Total Planned Expenses", `₹${expenseTotal.toLocaleString('en-IN')}`], [],
+                    ["Expense Breakdown"],
+                ];
+
+                Object.entries(categoryTotals).forEach(([categoryName, details]) => {
+                    summaryData.push([categoryName, `₹${details.total.toLocaleString('en-IN')}`]);
+                    Object.entries(details.groups).forEach(([groupName, groupTotal]) => {
+                        summaryData.push([`    ${groupName}`, `₹${groupTotal.toLocaleString('en-IN')}`]);
+                    });
+                });
+
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryData), "Summary");
+                
+                const dataSheets = {
+                    "Programme Expenses": data.programmeExpenses, "Core Programme Team": data.coreProgrammeTeam,
+                    "Senior Management Team": data.seniorManagementTeam, "Fund Raising & Marketing": data.fundRaisingMarketingCost,
+                    "Administrative Costs": data.administrativeCosts, "Other Organisation Costs": data.otherOrganisationCosts,
+                };
+                
+                for (const [sheetName, sheetData] of Object.entries(dataSheets)) {
+                     const formattedData = sheetData.map(i => ({ Group: i.group, Particular: i.particular, Unit: i.unit, 'No. of Units': i.nos, 'Cost/Unit': i.costPerUnit, Total: i.total }));
+                    if(formattedData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formattedData), sheetName);
+                }
+                XLSX.writeFile(wb, `${data.welcome.budgetTitle || 'NGO-Budget'}.xlsx`);
+            };
+
+            const calculateTotals = React.useMemo(() => {
+                const categoryTotals = {};
+                let expenseTotal = 0;
+
+                steps.slice(1).forEach(stepInfo => {
+                    const categoryData = data[stepInfo.dataKey] || [];
+                    const categoryTotal = categoryData.reduce((sum, item) => sum + (item.total || 0), 0);
+                    
+                    const groupTotals = categoryData.reduce((acc, item) => {
+                        acc[item.group] = (acc[item.group] || 0) + (item.total || 0);
+                        return acc;
+                    }, {});
+
+                    categoryTotals[stepInfo.name] = {
+                        total: categoryTotal,
+                        groups: groupTotals
+                    };
+                    expenseTotal += categoryTotal;
+                });
+
+                return { expenseTotal, categoryTotals };
+            }, [data]);
+
+            const toggleSummaryExpansion = (key) => {
+                setExpandedSummary(prev => ({...prev, [key]: !prev[key]}));
+            }
+
+            const Summary = () => {
+                const { expenseTotal, categoryTotals } = calculateTotals;
+                return (
+                    <Section title="Budget Summary">
+                        <div className="bg-white p-6 rounded-lg shadow-md border border-slate-200 text-center">
+                            <div><p className="text-sm text-slate-500">Total Planned Expenses</p><p className="text-4xl font-bold text-red-600">₹{expenseTotal.toLocaleString('en-IN')}</p></div>
+                        </div>
+                        <div className="mt-8">
+                            <h3 className="text-xl font-bold text-slate-800 mb-4">Expense Breakdown</h3>
+                            <div className="space-y-2">
+                                {Object.entries(categoryTotals).map(([categoryName, details]) => (
+                                    <div key={categoryName} className="p-4 bg-slate-50 rounded-lg">
+                                        <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleSummaryExpansion(categoryName)}>
+                                            <span className="font-semibold text-slate-800">{categoryName}</span>
+                                            <div className="flex items-center">
+                                                <span className="font-bold text-slate-800 text-lg mr-4">₹{details.total.toLocaleString('en-IN')}</span>
+                                                {expandedSummary[categoryName] ? <ChevronUp className="text-slate-500" /> : <ChevronDown className="text-slate-500" />}
+                                            </div>
+                                        </div>
+                                        {expandedSummary[categoryName] && (
+                                            <div className="mt-3 pl-6 border-l-2 border-slate-200 space-y-2">
+                                                 {Object.entries(details.groups).map(([groupName, groupTotal]) => (
+                                                    <div key={groupName} className="flex justify-between items-center text-sm">
+                                                        <span className="text-slate-600">{groupName}</span>
+                                                        <span className="font-medium text-slate-700">₹{groupTotal.toLocaleString('en-IN')}</span>
+                                                    </div>
+                                                 ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="mt-12 text-center">
+                            <button onClick={handleDownload} className="bg-green-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-green-700 transition-all duration-300 ease-in-out shadow-lg hover:shadow-xl flex items-center justify-center text-lg mx-auto"><Download className="mr-2"/> Download as Excel File</button>
+                        </div>
+                    </Section>
+                );
+            };
+
+            return (
+                <div className="container mx-auto p-4 md:p-8">
+                    <header className="text-center mb-8">
+                        <h1 className="text-4xl font-extrabold text-sky-700 flex items-center justify-center"><FileText className="w-10 h-10 mr-3"/> NGO Budget Builder</h1>
+                        <p className="text-slate-500 mt-2">A simple tool to help you create a comprehensive expense budget.</p>
+                    </header>
+                    <div className="mb-8 border-b border-slate-300">
+                        <nav className="-mb-px flex space-x-6 overflow-x-auto" aria-label="Tabs">
+                            {steps.map((s, i) => (<button key={s.name} onClick={() => goToStep(i)} className={`py-4 px-2 border-b-2 text-sm transition-colors duration-200 whitespace-nowrap ${!showSummary && i === step ? 'tab-active' : 'tab-inactive'}`}>{s.name}</button>))}
+                            <button onClick={() => setShowSummary(true)} className={`py-4 px-2 border-b-2 text-sm transition-colors duration-200 whitespace-nowrap ${showSummary ? 'tab-active' : 'tab-inactive'}`}>Summary</button>
+                        </nav>
+                    </div>
+                    <main>
+                        {showSummary ? <Summary /> : (
+                            <>
+                                {activeStepInfo.dataKey === 'programmeExpenses' && (
+                                    <div className="mb-4">
+                                        <button onClick={addProgramme} disabled={programmeNames.length >= 5} className="bg-green-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-600 transition disabled:opacity-50 disabled:cursor-not-allowed">Add New Programme</button>
+                                        {programmeNames.length >= 5 && <p className="text-sm text-red-500 mt-2">Maximum of 5 programmes allowed.</p>}
+                                    </div>
+                                )}
+                                <ActiveComponent 
+                                    data={data[activeStepInfo.dataKey]} 
+                                    updateData={(newData) => updateData(activeStepInfo.dataKey, newData)}
+                                    columns={activeStepInfo.cols}
+                                    title={activeStepInfo.name}
+                                    tip={activeStepInfo.tip}
+                                    groupTips={activeStepInfo.groupTips}
+                                    programmeNames={programmeNames}
+                                    isGroupNameEditable={activeStepInfo.dataKey === 'programmeExpenses'}
+                                    onGroupNameChange={handleProgrammeNameChange}
+                                />
+                            </>
+                        )}
+                    </main>
+                    <footer className="mt-8 flex justify-between items-center">
+                        <button onClick={prevStep} disabled={step === 0 && !showSummary} className="flex items-center bg-white border border-slate-300 text-slate-700 font-semibold py-2 px-4 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed shadow"><ArrowLeft className="mr-2"/> Previous</button>
+                        <button onClick={nextStep} className="flex items-center bg-sky-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-sky-700 transition shadow-lg">{step === steps.length - 1 && !showSummary ? 'View Summary' : 'Next'} <ArrowRight className="ml-2" /></button>
+                    </footer>
+                </div>
+            );
+        }
+
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
